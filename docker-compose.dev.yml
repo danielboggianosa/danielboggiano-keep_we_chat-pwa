@@ -1,0 +1,77 @@
+version: "3.8"
+
+# Development overrides — use with:
+#   docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  client:
+    build:
+      target: build
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./client/src:/app/src
+      - ./client/public:/app/public
+      - ./client/index.html:/app/index.html
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000"]
+    environment:
+      - NODE_ENV=development
+
+  api-gateway:
+    build:
+      target: build
+    ports:
+      - "4000:4000"
+      - "9229:9229"
+    volumes:
+      - ./services/api-gateway/src:/app/src
+    command: ["npx", "tsx", "watch", "src/index.ts"]
+    environment:
+      - NODE_ENV=development
+
+  stt-cloud:
+    volumes:
+      - ./services/stt-cloud/src:/app/src
+    command: ["python", "-m", "src.main", "--reload"]
+    environment:
+      - NODE_ENV=development
+
+  nlp-service:
+    volumes:
+      - ./services/nlp-service/src:/app/src
+    command: ["python", "-m", "src.main", "--reload"]
+    environment:
+      - NODE_ENV=development
+
+  search-service:
+    build:
+      target: build
+    ports:
+      - "4003:4003"
+      - "9230:9229"
+    volumes:
+      - ./services/search-service/src:/app/src
+    command: ["npx", "tsx", "watch", "src/index.ts"]
+    environment:
+      - NODE_ENV=development
+
+  calendar-service:
+    build:
+      target: build
+    ports:
+      - "4004:4004"
+      - "9231:9229"
+    volumes:
+      - ./services/calendar-service/src:/app/src
+    command: ["npx", "tsx", "watch", "src/index.ts"]
+    environment:
+      - NODE_ENV=development
+
+  postgres:
+    ports:
+      - "5432:5432"
+
+  minio:
+    ports:
+      - "9000:9000"
+      - "9001:9001"
