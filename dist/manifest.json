@@ -1,39 +1,21 @@
 {
-  "name": "Transcripción de Reuniones",
-  "short_name": "Transcripción",
-  "description": "Sistema de transcripción de reuniones offline-first",
+  "name": "KeepWeChat",
+  "short_name": "KeepWeChat",
+  "description": "Transcribe, recuerda, actúa — by Global S1",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#ffffff",
-  "theme_color": "#1a73e8",
+  "theme_color": "#FF6B6B",
   "lang": "es",
   "categories": ["productivity", "business"],
   "icons": [
     {
-      "src": "/icons/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-maskable-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/icons/icon-maskable-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     }
   ]
 }

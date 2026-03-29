@@ -70,7 +70,8 @@ export class StubSTTBackend implements STTBackend {
     language: 'es' | 'en',
     duration?: number,
   ): Promise<TranscriptionSegment[]> {
-    const audioDuration = duration ?? 0;
+    // Estimate duration from blob size if not provided (~16kB/s for webm audio)
+    const audioDuration = duration ?? (_audioData.size > 0 ? Math.max(1, _audioData.size / 16000) : 0);
 
     if (audioDuration <= 0) {
       return [];
