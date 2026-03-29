@@ -1,12 +1,13 @@
 /**
  * PipelineService — Orchestrates the full recording → processing → storage pipeline.
- * Audio → STT → Diarization → NLP → IndexedDB
  *
- * Initializes all modules with stub backends for local/offline operation.
+ * Uses LiveTranscriber (Web Speech API) for real-time transcription during recording.
+ * On stop: takes the live segments → Diarization → NLP → IndexedDB.
+ * Falls back to stub STT if Web Speech API is not available.
  */
 
 import type { AudioFile } from '../types/audio';
-import type { DiarizedTranscription } from '../types/transcription';
+import type { TranscriptionSegment, DiarizedTranscription } from '../types/transcription';
 import type { MeetingSummary, ActionItem, FormalMinutes } from '../types/nlp';
 
 import { AudioCaptureModule } from '../modules/audio-capture';
@@ -14,6 +15,7 @@ import { LocalSTTEngine } from '../modules/local-stt-engine';
 import { DiarizationEngine } from '../modules/diarization-engine';
 import { NLPService } from '../modules/nlp-service';
 import { ExportService } from '../modules/export-service';
+import { LiveTranscriber, type LiveSegment } from '../modules/live-transcriber';
 import { dbPut, dbGetAll } from '../db/db-operations';
 import { STORES } from '../db/indexed-db';
 import type { StoredTranscription } from '../modules/cloud-reprocessor';
@@ -39,6 +41,11 @@ export interface MeetingRecord {
   minutes: FormalMinutes;
 }
 
+export interface LiveTranscriptCallbacks {
+  onInterim: (text: string) => void;
+  onSegment: (segment: LiveSegment) => void;
+}
+
 export class PipelineService {
   readonly audioCapture = new AudioCaptureModule();
   private sttEngine: LocalSTTEngine;
@@ -46,11 +53,10 @@ export class PipelineService {
   private nlpService: NLPService;
   readonly exportService = new ExportService();
 
-  /** In-memory meeting records for quick UI access */
   private meetings: MeetingRecord[] = [];
-
   private currentSessionId: string | null = null;
-  private recordingStartTime = 0;
+  private liveTranscriber: LiveTranscriber | null = null;
+  private currentLanguage: 'es' | 'en' = 'es';
 
   constructor() {
     this.sttEngine = new LocalSTTEngine();
@@ -63,14 +69,32 @@ export class PipelineService {
     await this.loadMeetingsFromDB();
   }
 
-  /** Start a recording session. Returns session ID. */
-  async startRecording(language: 'es' | 'en' = 'es'): Promise<string> {
+  /**
+   * Start recording + live transcription.
+   * Returns session ID. Calls liveCallbacks with real-time transcript updates.
+   */
+  async startRecording(
+    language: 'es' | 'en' = 'es',
+    liveCallbacks?: LiveTranscriptCallbacks,
+  ): Promise<string> {
+    this.currentLanguage = language;
+
     const session = await this.audioCapture.startRecording({
       source: 'microphone',
       language,
     });
     this.currentSessionId = session.id;
-    this.recordingStartTime = Date.now();
+
+    // Start live transcription if Web Speech API is available
+    if (LiveTranscriber.isSupported()) {
+      this.liveTranscriber = new LiveTranscriber(language, {
+        onInterim: (text) => liveCallbacks?.onInterim(text),
+        onSegment: (seg) => liveCallbacks?.onSegment(seg),
+        onError: (err) => console.warn('LiveTranscriber:', err),
+      });
+      this.liveTranscriber.start();
+    }
+
     return session.id;
   }
 
@@ -79,8 +103,8 @@ export class PipelineService {
   }
 
   /**
-   * Stop recording and run the full pipeline:
-   * STT → Diarization → NLP Summary → Action Items → Minutes → IndexedDB
+   * Stop recording and process.
+   * Uses live transcription segments if available, falls back to stub STT.
    */
   async stopAndProcess(title?: string): Promise<ProcessingResult> {
     if (!this.currentSessionId) {
@@ -90,20 +114,32 @@ export class PipelineService {
     const sessionId = this.currentSessionId;
     this.currentSessionId = null;
 
-    // 1. Stop recording → get AudioFile
+    // 1. Collect live segments before stopping
+    let liveSegments: TranscriptionSegment[] = [];
+    if (this.liveTranscriber) {
+      liveSegments = this.liveTranscriber.stop();
+      this.liveTranscriber = null;
+    }
+
+    // 2. Stop audio recording → get AudioFile
     const audioFile = await this.audioCapture.stopRecording(sessionId);
 
-    // 2. STT → RawTranscription
-    const rawTranscription = await this.sttEngine.transcribe(audioFile);
+    // 3. Get transcription segments: prefer live, fallback to stub STT
+    let segments: TranscriptionSegment[];
+    if (liveSegments.length > 0) {
+      segments = liveSegments;
+    } else {
+      // Fallback: use stub STT engine
+      const rawTranscription = await this.sttEngine.transcribe(audioFile);
+      segments = rawTranscription.segments;
+    }
 
-    // 3. Diarization → DiarizedTranscription
-    const transcription = await this.diarization.diarize(audioFile, rawTranscription.segments);
+    // 4. Diarization
+    const transcription = await this.diarization.diarize(audioFile, segments);
 
-    // 4. NLP → Summary + Action Items
+    // 5. NLP
     const summary = await this.nlpService.generateSummary(transcription);
     const actionItems = await this.nlpService.extractActionItems(transcription);
-
-    // 5. NLP → Formal Minutes
     const minutes = await this.nlpService.generateMinutes(transcription, summary, actionItems);
 
     // 6. Persist to IndexedDB
@@ -142,22 +178,18 @@ export class PipelineService {
     };
   }
 
-  /** Get all meeting records (most recent first). */
   getMeetings(): MeetingRecord[] {
     return this.meetings;
   }
 
-  /** Get a specific meeting by ID. */
   getMeeting(id: string): MeetingRecord | undefined {
     return this.meetings.find(m => m.id === id);
   }
 
-  /** Load previously saved meetings from IndexedDB on startup. */
   private async loadMeetingsFromDB(): Promise<void> {
     try {
       const stored = await dbGetAll<StoredTranscription>(STORES.TRANSCRIPTIONS);
       for (const s of stored) {
-        // Reconstruct meeting records from stored transcriptions
         const summary = await this.nlpService.generateSummary(s.transcription);
         const actionItems = await this.nlpService.extractActionItems(s.transcription);
         const minutes = await this.nlpService.generateMinutes(s.transcription, summary, actionItems);
@@ -176,10 +208,9 @@ export class PipelineService {
           minutes,
         });
       }
-      // Sort most recent first
       this.meetings.sort((a, b) => b.date.getTime() - a.date.getTime());
     } catch {
-      // DB might not be available yet, that's ok
+      // DB might not be available yet
     }
   }
 }

@@ -18,6 +18,8 @@ export interface RecordingScreenAPI {
   updateTimer: (seconds: number) => void;
   animateWaveform: () => void;
   addTranscriptLine: (speaker: string, text: string, color: string) => void;
+  updateInterim: (text: string) => void;
+  updateSpeakerInfo: (text: string) => void;
 }
 
 export function createRecordingScreen(cb: RecordingScreenCallbacks): RecordingScreenAPI {
@@ -62,6 +64,9 @@ export function createRecordingScreen(cb: RecordingScreenCallbacks): RecordingSc
     <div class="rec-live-transcript">
       <div class="rec-lt-title">Transcripción en vivo</div>
       <div id="rec-transcript-lines"></div>
+      <div id="rec-interim" class="rec-lt-line" style="opacity:0.5;display:none;">
+        <span class="rec-lt-text" style="font-style:italic;color:var(--text-tertiary)"></span>
+      </div>
     </div>
 
     <!-- Controls -->
@@ -82,6 +87,10 @@ export function createRecordingScreen(cb: RecordingScreenCallbacks): RecordingSc
   const waveformEl = el.querySelector('#rec-waveform') as HTMLElement;
   const bars = waveformEl.querySelectorAll('.bar') as NodeListOf<HTMLElement>;
   const transcriptLines = el.querySelector('#rec-transcript-lines') as HTMLElement;
+  const speakerTextEl = el.querySelector('.rec-speaker-text') as HTMLElement;
+
+  const interimEl = el.querySelector('#rec-interim') as HTMLElement;
+  const interimTextEl = interimEl.querySelector('.rec-lt-text') as HTMLElement;
 
   el.querySelector('#rec-back')!.addEventListener('click', cb.onBack);
   el.querySelector('#rec-stop')!.addEventListener('click', cb.onStop);
@@ -113,6 +122,9 @@ export function createRecordingScreen(cb: RecordingScreenCallbacks): RecordingSc
   }
 
   function addTranscriptLine(speaker: string, text: string, color: string): void {
+    // Hide interim when a final segment arrives
+    interimEl.style.display = 'none';
+
     const line = document.createElement('div');
     line.className = 'rec-lt-line';
     line.innerHTML = `
@@ -126,5 +138,18 @@ export function createRecordingScreen(cb: RecordingScreenCallbacks): RecordingSc
     }
   }
 
-  return { element: el, reset, updateTimer, animateWaveform, addTranscriptLine };
+  function updateInterim(text: string): void {
+    if (text) {
+      interimTextEl.textContent = text;
+      interimEl.style.display = 'flex';
+    } else {
+      interimEl.style.display = 'none';
+    }
+  }
+
+  function updateSpeakerInfo(text: string): void {
+    speakerTextEl.textContent = text;
+  }
+
+  return { element: el, reset, updateTimer, animateWaveform, addTranscriptLine, updateInterim, updateSpeakerInfo };
 }

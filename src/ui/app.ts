@@ -1,6 +1,6 @@
 /**
  * Main app shell matching the KeepWeChat Pencil design.
- * Connects the full pipeline: Record → STT → Diarization → NLP → IndexedDB → UI.
+ * Connects the full pipeline: Record → Live STT → Diarization → NLP → IndexedDB → UI.
  */
 
 import { injectStyles } from './styles';
@@ -10,6 +10,7 @@ import { createRecordingScreen } from './recording-screen';
 import { createSearchScreen } from './search-screen';
 import { createTranscriptionDetailScreen } from './transcription-detail-screen';
 import { PipelineService } from './pipeline-service';
+import { LiveTranscriber } from '../modules/live-transcriber';
 
 export type ScreenId = 'home' | 'search' | 'calendar' | 'settings' | 'recording' | 'processing' | 'detail';
 
@@ -25,6 +26,8 @@ const NAV_ITEMS: { id: ScreenId; icon: string; label: string }[] = [
   { id: 'settings', icon: icons.settings, label: 'Ajustes' },
 ];
 
+const SPEAKER_COLORS = ['var(--accent-coral)', 'var(--accent-indigo)', 'var(--accent-green)', 'var(--accent-orange)'];
+
 export function createApp(): AppUI {
   injectStyles();
 
@@ -32,6 +35,7 @@ export function createApp(): AppUI {
   pipeline.init().catch(console.error);
 
   let timerInterval: ReturnType<typeof setInterval> | null = null;
+  let liveSegmentCount = 0;
 
   const root = document.createElement('div');
   root.id = 'app-shell';
@@ -62,7 +66,7 @@ export function createApp(): AppUI {
     exportService: pipeline.exportService,
   });
 
-  // Processing screen (shown while pipeline runs)
+  // Processing screen
   const processingScreen = document.createElement('div');
   processingScreen.className = 'screen';
   processingScreen.style.cssText = 'padding-bottom:0;';
@@ -77,7 +81,7 @@ export function createApp(): AppUI {
         Procesando grabación...
       </div>
       <div style="font-size:14px;color:var(--text-secondary);text-align:center;">
-        Transcribiendo audio, identificando hablantes y generando resumen.
+        Identificando hablantes y generando resumen.
       </div>
     </div>
     <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
@@ -132,11 +136,9 @@ export function createApp(): AppUI {
   });
   root.appendChild(nav);
 
-  let activeScreen: ScreenId = 'home';
   const fullscreenScreens: ScreenId[] = ['recording', 'processing', 'detail'];
 
   function navigateTo(screen: ScreenId): void {
-    activeScreen = screen;
     screens.forEach((el, id) => {
       el.classList.toggle('active', id === screen);
     });
@@ -148,9 +150,35 @@ export function createApp(): AppUI {
 
   async function startRecording(): Promise<void> {
     try {
-      await pipeline.startRecording('es');
+      liveSegmentCount = 0;
+
+      // Show speech API status
+      const hasSpeechAPI = LiveTranscriber.isSupported();
+      if (!hasSpeechAPI) {
+        recording.updateSpeakerInfo('Sin reconocimiento de voz (navegador no compatible)');
+      }
+
+      await pipeline.startRecording('es', {
+        onInterim: (text) => {
+          // Show interim (partial) text in the live transcript area
+          recording.updateInterim(text);
+        },
+        onSegment: (segment) => {
+          // Show finalized segment in the live transcript
+          liveSegmentCount++;
+          const speakerIdx = (liveSegmentCount - 1) % SPEAKER_COLORS.length;
+          const speakerLabel = `Hablante ${speakerIdx + 1}`;
+          const color = SPEAKER_COLORS[speakerIdx];
+          recording.addTranscriptLine(speakerLabel, segment.text, color);
+          recording.updateSpeakerInfo(`${speakerLabel} detectado`);
+        },
+      });
+
       navigateTo('recording');
       recording.reset();
+      if (hasSpeechAPI) {
+        recording.updateSpeakerInfo('Escuchando...');
+      }
 
       let elapsed = 0;
       timerInterval = setInterval(() => {
@@ -165,7 +193,6 @@ export function createApp(): AppUI {
   }
 
   async function stopAndProcess(): Promise<void> {
-    // Stop timer
     if (timerInterval) {
       clearInterval(timerInterval);
       timerInterval = null;
@@ -176,13 +203,10 @@ export function createApp(): AppUI {
       return;
     }
 
-    // Show processing screen
     navigateTo('processing');
 
     try {
       const result = await pipeline.stopAndProcess();
-
-      // Navigate to detail screen with the result
       const meeting = pipeline.getMeeting(result.transcriptionId);
       if (meeting) {
         detail.show(meeting);
@@ -193,7 +217,7 @@ export function createApp(): AppUI {
       }
     } catch (err) {
       console.error('Processing failed:', err);
-      alert(`Error al procesar la grabación: ${err instanceof Error ? err.message : String(err)}`);
+      alert(`Error al procesar: ${err instanceof Error ? err.message : String(err)}`);
       dashboard.refresh();
       navigateTo('home');
     }
