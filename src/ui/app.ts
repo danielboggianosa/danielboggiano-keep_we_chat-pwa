@@ -35,6 +35,9 @@ export function createApp(): AppUI {
 
   let timerInterval: ReturnType<typeof setInterval> | null = null;
   let liveSegmentCount = 0;
+  let lastSegmentEndTime = 0;
+  let currentLiveSpeaker = 0;
+  const PAUSE_THRESHOLD = 3.0; // seconds — same as PauseBasedDiarizationBackend
 
   const root = document.createElement('div');
   root.id = 'app-shell';
@@ -150,6 +153,8 @@ export function createApp(): AppUI {
   async function startRecording(): Promise<void> {
     try {
       liveSegmentCount = 0;
+      lastSegmentEndTime = 0;
+      currentLiveSpeaker = 0;
       recording.reset();
       navigateTo('recording');
       recording.updateSpeakerInfo('Iniciando grabación...');
@@ -161,9 +166,14 @@ export function createApp(): AppUI {
         },
         onSegment: (segment) => {
           liveSegmentCount++;
-          const speakerIdx = (liveSegmentCount - 1) % SPEAKER_COLORS.length;
-          const speakerLabel = `Hablante ${speakerIdx + 1}`;
-          const color = SPEAKER_COLORS[speakerIdx];
+          // Detect speaker change based on pause (same logic as PauseBasedDiarizationBackend)
+          if (liveSegmentCount > 1 && (segment.startTime - lastSegmentEndTime) > PAUSE_THRESHOLD) {
+            currentLiveSpeaker = currentLiveSpeaker === 0 ? 1 : 0;
+          }
+          lastSegmentEndTime = segment.endTime;
+
+          const speakerLabel = `Hablante ${currentLiveSpeaker + 1}`;
+          const color = SPEAKER_COLORS[currentLiveSpeaker];
           recording.addTranscriptLine(speakerLabel, segment.text, color);
           recording.updateSpeakerInfo(`${speakerLabel} detectado`);
         },

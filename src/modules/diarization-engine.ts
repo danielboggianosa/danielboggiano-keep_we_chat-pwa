@@ -57,10 +57,61 @@ export interface DiarizationBackend {
 // ── Stub backend ───────────────────────────────────────────────────
 
 /**
- * Simulates speaker assignment based on segment index patterns.
- * Cycles through a configurable number of speakers so the rest of
- * the pipeline can be developed and tested.
+ * Pause-based diarization backend.
+ *
+ * Assigns speakers based on gaps between segments:
+ * - If the gap between two consecutive segments is small (< PAUSE_THRESHOLD),
+ *   they're likely the same speaker.
+ * - If the gap is large, it suggests a speaker change.
+ *
+ * This works well for real recordings where the Web Speech API produces
+ * segments with natural timing. For a single speaker, all segments will
+ * be assigned to the same speaker since pauses are typically short.
  */
+export class PauseBasedDiarizationBackend implements DiarizationBackend {
+  /** Gap in seconds that suggests a speaker change. */
+  private pauseThreshold: number;
+
+  constructor(pauseThreshold: number = 3.0) {
+    this.pauseThreshold = pauseThreshold;
+  }
+
+  async assignSpeakers(
+    _audio: AudioFile,
+    segments: TranscriptionSegment[],
+  ): Promise<Array<{ speakerId: string; confidence: number }>> {
+    if (segments.length === 0) return [];
+
+    const assignments: Array<{ speakerId: string; confidence: number }> = [];
+    let currentSpeaker = 1;
+
+    // First segment is always speaker 1
+    assignments.push({
+      speakerId: `speaker_${currentSpeaker}`,
+      confidence: segments[0].confidence,
+    });
+
+    for (let i = 1; i < segments.length; i++) {
+      const gap = segments[i].startTime - segments[i - 1].endTime;
+
+      if (gap > this.pauseThreshold) {
+        // Significant pause — might be a speaker change
+        // Alternate between speakers (max 2 for pause-based detection)
+        currentSpeaker = currentSpeaker === 1 ? 2 : 1;
+      }
+      // Otherwise same speaker continues
+
+      assignments.push({
+        speakerId: `speaker_${currentSpeaker}`,
+        confidence: segments[i].confidence,
+      });
+    }
+
+    return assignments;
+  }
+}
+
+// Keep StubDiarizationBackend for tests that depend on it
 export class StubDiarizationBackend implements DiarizationBackend {
   constructor(private speakerCount: number = 3) {}
 
@@ -70,7 +121,7 @@ export class StubDiarizationBackend implements DiarizationBackend {
   ): Promise<Array<{ speakerId: string; confidence: number }>> {
     return segments.map((seg, index) => ({
       speakerId: `speaker_${(index % this.speakerCount) + 1}`,
-      confidence: seg.confidence, // mirror segment confidence as speaker confidence
+      confidence: seg.confidence,
     }));
   }
 }
@@ -111,7 +162,7 @@ export class DiarizationEngine {
   private backend: DiarizationBackend;
 
   constructor(backend?: DiarizationBackend) {
-    this.backend = backend ?? new StubDiarizationBackend();
+    this.backend = backend ?? new PauseBasedDiarizationBackend();
   }
 
   /**
