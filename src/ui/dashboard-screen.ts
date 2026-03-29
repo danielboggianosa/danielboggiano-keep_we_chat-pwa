@@ -4,6 +4,7 @@
  */
 
 import { icons } from './icons';
+import { APP_VERSION } from '../version';
 import type { MeetingRecord } from './pipeline-service';
 
 interface DashboardCallbacks {
@@ -127,6 +128,11 @@ export function createDashboardScreen(cb: DashboardCallbacks): {
           ${icons.mic}
           <span>Grabar reunión</span>
         </button>
+      </div>
+
+      <!-- Version -->
+      <div style="text-align:center;padding:4px 0 8px 0;font-size:11px;color:var(--text-disabled);">
+        KeepWeChat v${APP_VERSION}
       </div>
     `;
 

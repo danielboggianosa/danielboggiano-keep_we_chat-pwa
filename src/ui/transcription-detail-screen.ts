@@ -22,7 +22,7 @@ interface DetailCallbacks {
 
 export interface TranscriptionDetailAPI {
   element: HTMLElement;
-  show: (meeting: MeetingRecord) => void;
+  show: (meeting: MeetingRecord, defaultTab?: 'transcript' | 'summary' | 'actions') => void;
 }
 
 export function createTranscriptionDetailScreen(cb: DetailCallbacks): TranscriptionDetailAPI {
@@ -239,10 +239,10 @@ export function createTranscriptionDetailScreen(cb: DetailCallbacks): Transcript
     exportModal.classList.add('hidden');
   }
 
-  function show(meeting: MeetingRecord): void {
+  function show(meeting: MeetingRecord, defaultTab?: 'transcript' | 'summary' | 'actions'): void {
     currentMeeting = meeting;
-    activeTab = 'transcript';
-    tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === 'transcript'));
+    activeTab = defaultTab ?? 'transcript';
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === activeTab));
 
     titleEl.textContent = meeting.title;
     metaEl.innerHTML = `

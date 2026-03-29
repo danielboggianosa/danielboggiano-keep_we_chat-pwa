@@ -152,19 +152,23 @@ export function createApp(): AppUI {
     try {
       liveSegmentCount = 0;
 
-      // Show speech API status
+      // Reset UI FIRST, before starting anything
+      recording.reset();
+      navigateTo('recording');
+
       const hasSpeechAPI = LiveTranscriber.isSupported();
       if (!hasSpeechAPI) {
         recording.updateSpeakerInfo('Sin reconocimiento de voz (navegador no compatible)');
+      } else {
+        recording.updateSpeakerInfo('Escuchando...');
       }
 
+      // Now start recording + live transcription
       await pipeline.startRecording('es', {
         onInterim: (text) => {
-          // Show interim (partial) text in the live transcript area
           recording.updateInterim(text);
         },
         onSegment: (segment) => {
-          // Show finalized segment in the live transcript
           liveSegmentCount++;
           const speakerIdx = (liveSegmentCount - 1) % SPEAKER_COLORS.length;
           const speakerLabel = `Hablante ${speakerIdx + 1}`;
@@ -173,12 +177,6 @@ export function createApp(): AppUI {
           recording.updateSpeakerInfo(`${speakerLabel} detectado`);
         },
       });
-
-      navigateTo('recording');
-      recording.reset();
-      if (hasSpeechAPI) {
-        recording.updateSpeakerInfo('Escuchando...');
-      }
 
       let elapsed = 0;
       timerInterval = setInterval(() => {
@@ -189,6 +187,7 @@ export function createApp(): AppUI {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       alert(`No se pudo iniciar la grabación: ${msg}`);
+      navigateTo('home');
     }
   }
 
@@ -199,6 +198,7 @@ export function createApp(): AppUI {
     }
 
     if (!pipeline.activeSessionId) {
+      dashboard.refresh();
       navigateTo('home');
       return;
     }
@@ -209,7 +209,7 @@ export function createApp(): AppUI {
       const result = await pipeline.stopAndProcess();
       const meeting = pipeline.getMeeting(result.transcriptionId);
       if (meeting) {
-        detail.show(meeting);
+        detail.show(meeting, 'summary');
         navigateTo('detail');
       } else {
         dashboard.refresh();
@@ -217,9 +217,10 @@ export function createApp(): AppUI {
       }
     } catch (err) {
       console.error('Processing failed:', err);
-      alert(`Error al procesar: ${err instanceof Error ? err.message : String(err)}`);
+      // Even on error, try to go home gracefully
       dashboard.refresh();
       navigateTo('home');
+      alert(`Error al procesar: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
