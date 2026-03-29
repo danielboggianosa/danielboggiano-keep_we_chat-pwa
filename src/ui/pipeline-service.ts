@@ -44,6 +44,7 @@ export interface MeetingRecord {
 export interface LiveTranscriptCallbacks {
   onInterim: (text: string) => void;
   onSegment: (segment: LiveSegment) => void;
+  onError?: (error: string) => void;
 }
 
 export class PipelineService {
@@ -90,9 +91,19 @@ export class PipelineService {
       this.liveTranscriber = new LiveTranscriber(language, {
         onInterim: (text) => liveCallbacks?.onInterim(text),
         onSegment: (seg) => liveCallbacks?.onSegment(seg),
-        onError: (err) => console.warn('LiveTranscriber:', err),
+        onError: (err) => {
+          console.warn('LiveTranscriber:', err);
+          liveCallbacks?.onError?.(err);
+        },
       });
-      this.liveTranscriber.start();
+      // Small delay to let getUserMedia settle before starting speech recognition
+      setTimeout(() => {
+        if (this.liveTranscriber) {
+          this.liveTranscriber.start();
+        }
+      }, 500);
+    } else {
+      console.warn('Web Speech API not supported in this browser');
     }
 
     return session.id;

@@ -1,9 +1,12 @@
 /**
  * LiveTranscriber — Real-time speech-to-text using the Web Speech API.
  *
- * Uses SpeechRecognition (available in Chrome, Edge, Safari) to provide
- * live transcription during recording. Collects finalized segments with
- * timestamps that can be fed into the diarization/NLP pipeline.
+ * Uses SpeechRecognition (Chrome/Edge/Safari) for live transcription.
+ * Falls back gracefully when the API is unavailable or network fails.
+ *
+ * NOTE: Chrome's Web Speech API sends audio to Google servers.
+ * It requires internet access and works on localhost or HTTPS origins.
+ * If running through Docker/nginx proxy, use `npm run dev` (Vite) instead.
  */
 
 import type { TranscriptionSegment } from '../types/transcription';
@@ -21,12 +24,6 @@ export interface LiveTranscriberCallbacks {
   onError: (error: string) => void;
 }
 
-// Extend Window for vendor-prefixed SpeechRecognition
-interface SpeechRecognitionEvent extends Event {
-  results: SpeechRecognitionResultList;
-  resultIndex: number;
-}
-
 export class LiveTranscriber {
   private recognition: any = null;
   private isRunning = false;
@@ -35,13 +32,14 @@ export class LiveTranscriber {
   private segmentStartTime = 0;
   private callbacks: LiveTranscriberCallbacks;
   private language: string;
+  private consecutiveErrors = 0;
+  private static readonly MAX_CONSECUTIVE_ERRORS = 3;
 
   constructor(language: 'es' | 'en', callbacks: LiveTranscriberCallbacks) {
     this.language = language === 'es' ? 'es-ES' : 'en-US';
     this.callbacks = callbacks;
   }
 
-  /** Check if Web Speech API is available in this browser. */
   static isSupported(): boolean {
     return !!(
       (window as any).SpeechRecognition ||
@@ -49,7 +47,6 @@ export class LiveTranscriber {
     );
   }
 
-  /** Start live transcription. */
   start(): void {
     if (this.isRunning) return;
 
@@ -58,91 +55,118 @@ export class LiveTranscriber {
       (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      this.callbacks.onError('Web Speech API no disponible en este navegador');
+      this.callbacks.onError('Web Speech API no disponible');
       return;
     }
-
-    this.recognition = new SpeechRecognition();
-    this.recognition.continuous = true;
-    this.recognition.interimResults = true;
-    this.recognition.lang = this.language;
-    this.recognition.maxAlternatives = 1;
 
     this.startTimestamp = Date.now();
     this.segmentStartTime = 0;
     this.segments = [];
+    this.consecutiveErrors = 0;
     this.isRunning = true;
 
-    this.recognition.onresult = (event: SpeechRecognitionEvent) => {
+    this.createAndStartRecognition(SpeechRecognition);
+  }
+
+  private createAndStartRecognition(SpeechRecognition: any): void {
+    const rec = new SpeechRecognition();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = this.language;
+    rec.maxAlternatives = 1;
+    this.recognition = rec;
+
+    rec.onresult = (event: any) => {
+      // Reset error counter on successful result
+      this.consecutiveErrors = 0;
       const now = (Date.now() - this.startTimestamp) / 1000;
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
-        const text = result[0].transcript.trim();
-
-        if (!text) continue;
+        const transcript = result[0].transcript.trim();
+        if (!transcript) continue;
 
         if (result.isFinal) {
           const segment: TranscriptionSegment = {
             startTime: this.segmentStartTime,
             endTime: now,
-            text,
+            text: transcript,
             confidence: result[0].confidence || 0.85,
           };
           this.segments.push(segment);
           this.segmentStartTime = now;
-
           this.callbacks.onSegment({
-            text,
+            text: transcript,
             startTime: segment.startTime,
             endTime: segment.endTime,
             isFinal: true,
           });
         } else {
-          this.callbacks.onInterim(text);
+          this.callbacks.onInterim(transcript);
         }
       }
     };
 
-    this.recognition.onerror = (event: any) => {
-      // 'no-speech' is normal, don't treat as error
-      if (event.error === 'no-speech' || event.error === 'aborted') return;
-      this.callbacks.onError(`Speech recognition error: ${event.error}`);
+    rec.onerror = (event: any) => {
+      const err = event.error;
+      if (err === 'aborted') return;
+
+      if (err === 'no-speech') {
+        // Normal — no speech detected, will auto-restart via onend
+        return;
+      }
+
+      this.consecutiveErrors++;
+      console.warn(`[LiveTranscriber] Error (${this.consecutiveErrors}/${LiveTranscriber.MAX_CONSECUTIVE_ERRORS}):`, err);
+
+      if (err === 'network' || err === 'service-not-allowed' || err === 'not-allowed') {
+        // Fatal errors — stop trying
+        this.isRunning = false;
+        this.callbacks.onError(
+          err === 'network'
+            ? 'Sin conexión al servicio de voz. La transcripción en vivo no está disponible.'
+            : `Permiso denegado: ${err}`
+        );
+        return;
+      }
+
+      // For other errors, stop if too many consecutive
+      if (this.consecutiveErrors >= LiveTranscriber.MAX_CONSECUTIVE_ERRORS) {
+        this.isRunning = false;
+        this.callbacks.onError(`Demasiados errores consecutivos: ${err}`);
+      }
     };
 
-    this.recognition.onend = () => {
-      // Auto-restart if still supposed to be running
+    rec.onend = () => {
       if (this.isRunning) {
+        // Auto-restart (Chrome stops after silence or after each result batch)
         try {
-          this.recognition.start();
-        } catch {
-          // Already started or disposed
-        }
+          setTimeout(() => {
+            if (this.isRunning) {
+              this.createAndStartRecognition(SpeechRecognition);
+            }
+          }, 300);
+        } catch { /* ok */ }
       }
     };
 
     try {
-      this.recognition.start();
+      rec.start();
     } catch (err) {
-      this.callbacks.onError(`No se pudo iniciar el reconocimiento de voz: ${err}`);
+      this.isRunning = false;
+      this.callbacks.onError(`No se pudo iniciar: ${err}`);
     }
   }
 
-  /** Stop live transcription and return all collected segments. */
   stop(): TranscriptionSegment[] {
     this.isRunning = false;
     if (this.recognition) {
-      try {
-        this.recognition.stop();
-      } catch {
-        // Already stopped
-      }
+      try { this.recognition.stop(); } catch { /* ok */ }
       this.recognition = null;
     }
     return [...this.segments];
   }
 
-  /** Get segments collected so far without stopping. */
   getSegments(): TranscriptionSegment[] {
     return [...this.segments];
   }

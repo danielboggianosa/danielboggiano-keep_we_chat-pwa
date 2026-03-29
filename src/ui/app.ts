@@ -10,7 +10,6 @@ import { createRecordingScreen } from './recording-screen';
 import { createSearchScreen } from './search-screen';
 import { createTranscriptionDetailScreen } from './transcription-detail-screen';
 import { PipelineService } from './pipeline-service';
-import { LiveTranscriber } from '../modules/live-transcriber';
 
 export type ScreenId = 'home' | 'search' | 'calendar' | 'settings' | 'recording' | 'processing' | 'detail';
 
@@ -151,22 +150,14 @@ export function createApp(): AppUI {
   async function startRecording(): Promise<void> {
     try {
       liveSegmentCount = 0;
-
-      // Reset UI FIRST, before starting anything
       recording.reset();
       navigateTo('recording');
+      recording.updateSpeakerInfo('Iniciando grabación...');
 
-      const hasSpeechAPI = LiveTranscriber.isSupported();
-      if (!hasSpeechAPI) {
-        recording.updateSpeakerInfo('Sin reconocimiento de voz (navegador no compatible)');
-      } else {
-        recording.updateSpeakerInfo('Escuchando...');
-      }
-
-      // Now start recording + live transcription
       await pipeline.startRecording('es', {
         onInterim: (text) => {
           recording.updateInterim(text);
+          recording.updateSpeakerInfo('Escuchando...');
         },
         onSegment: (segment) => {
           liveSegmentCount++;
@@ -175,6 +166,10 @@ export function createApp(): AppUI {
           const color = SPEAKER_COLORS[speakerIdx];
           recording.addTranscriptLine(speakerLabel, segment.text, color);
           recording.updateSpeakerInfo(`${speakerLabel} detectado`);
+        },
+        onError: (err) => {
+          recording.updateSpeakerInfo('Transcripción en vivo no disponible');
+          recording.addTranscriptLine('Sistema', err, 'var(--text-tertiary)');
         },
       });
 
