@@ -47,7 +47,7 @@
                   "id": "CGo4z",
                   "name": "appTitle",
                   "fill": "$text-primary",
-                  "content": "KeepItAI",
+                  "content": "KeepWeChat",
                   "fontFamily": "Bricolage Grotesque",
                   "fontSize": 24,
                   "fontWeight": "700"
@@ -3374,7 +3374,7 @@
                   "id": "qrFfB",
                   "name": "logoName",
                   "fill": "$text-primary",
-                  "content": "KeepItAI",
+                  "content": "KeepWeChat",
                   "fontFamily": "Bricolage Grotesque",
                   "fontSize": 28,
                   "fontWeight": "700"
@@ -3794,7 +3794,7 @@
                   "id": "Idtzx",
                   "name": "regSub",
                   "fill": "$text-secondary",
-                  "content": "Únete a KeepItAI",
+                  "content": "Únete a KeepWeChat",
                   "fontFamily": "DM Sans",
                   "fontSize": 14
                 }
@@ -4211,7 +4211,7 @@
                   "id": "ZvBeP",
                   "name": "adminLogoText",
                   "fill": "$text-primary",
-                  "content": "KeepItAI",
+                  "content": "KeepWeChat",
                   "fontFamily": "Bricolage Grotesque",
                   "fontSize": 18,
                   "fontWeight": "700"
