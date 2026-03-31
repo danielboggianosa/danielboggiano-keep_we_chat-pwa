@@ -1,8 +1,12 @@
 /**
  * Formal minutes view component.
  * Displays structured meeting minutes with edit-before-finalize option.
- * Requirement 6.3: Allow user to review and edit minutes before finalizing.
+ * Connected to POST /api/nlp/minutes for real generation.
+ * Requirement 6.3, 7.6: Allow user to review and edit minutes before finalizing.
  */
+
+import { apiGenerateMinutes, hasTokens } from './api-client';
+import type { DiarizedTranscription } from '../types/transcription';
 
 export interface MinutesData {
   title: string;
@@ -17,7 +21,7 @@ export interface MinutesData {
 
 export function createMinutesView(
   onFinalize: (editedContent: string) => void
-): { element: HTMLElement; update: (data: MinutesData | null) => void } {
+): { element: HTMLElement; update: (data: MinutesData | null) => void; generateFromAPI: (transcription: DiarizedTranscription) => Promise<void> } {
   const el = document.createElement('div');
   el.className = 'panel';
   el.setAttribute('role', 'region');
@@ -134,7 +138,34 @@ export function createMinutesView(
     }
   }
 
-  return { element: el, update };
+  async function generateFromAPI(transcription: DiarizedTranscription): Promise<void> {
+    await generateFromAPIImpl(transcription, update);
+  }
+
+  return { element: el, update, generateFromAPI };
+}
+
+async function generateFromAPIImpl(
+  transcription: DiarizedTranscription,
+  updateFn: (data: MinutesData | null) => void,
+): Promise<void> {
+  if (!hasTokens()) return;
+  try {
+    const minutes = await apiGenerateMinutes(transcription);
+    const data: MinutesData = {
+      title: minutes.title,
+      date: typeof minutes.date === 'string' ? minutes.date : new Date(minutes.date).toLocaleDateString('es'),
+      attendees: minutes.attendees.map(a => a.label),
+      topicsDiscussed: minutes.topicsDiscussed,
+      decisions: minutes.decisions,
+      actionItems: minutes.actionItems.map(a => ({ description: a.description, assignedToLabel: a.assignedToLabel })),
+      language: minutes.language,
+      finalized: false,
+    };
+    updateFn(data);
+  } catch {
+    // Silently fail — the user can still use local minutes
+  }
 }
 
 function escapeHtml(text: string): string {

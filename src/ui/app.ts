@@ -1,6 +1,9 @@
 /**
  * Main app shell matching the KeepWeChat Pencil design.
  * Connects the full pipeline: Record → Live STT → Diarization → NLP → IndexedDB → UI.
+ *
+ * When the user is authenticated, screens fetch data from the real API Gateway.
+ * Otherwise shows the auth screen first.
  */
 
 import { injectStyles } from './styles';
@@ -10,8 +13,16 @@ import { createRecordingScreen } from './recording-screen';
 import { createSearchScreen } from './search-screen';
 import { createTranscriptionDetailScreen } from './transcription-detail-screen';
 import { PipelineService } from './pipeline-service';
+import { createAuthScreen } from './auth-screen';
+import {
+  hasTokens,
+  onAuthChange,
+  apiLogout,
+  apiGetTranscription,
+  apiTranscriptionToMeetingRecord,
+} from './api-client';
 
-export type ScreenId = 'home' | 'search' | 'calendar' | 'settings' | 'recording' | 'processing' | 'detail';
+export type ScreenId = 'auth' | 'home' | 'search' | 'calendar' | 'settings' | 'recording' | 'processing' | 'detail';
 
 export interface AppUI {
   root: HTMLElement;
@@ -25,23 +36,36 @@ const NAV_ITEMS: { id: ScreenId; icon: string; label: string }[] = [
   { id: 'settings', icon: icons.settings, label: 'Ajustes' },
 ];
 
-const SPEAKER_COLORS = ['var(--accent-coral)', 'var(--accent-indigo)', 'var(--accent-green)', 'var(--accent-orange)'];
+const SPEAKER_COLORS = [
+  'var(--accent-coral)',
+  'var(--accent-indigo)',
+  'var(--accent-green)',
+  'var(--accent-orange)',
+];
 
 export function createApp(): AppUI {
   injectStyles();
 
   const pipeline = new PipelineService();
-  pipeline.init().catch(console.error);
 
   let timerInterval: ReturnType<typeof setInterval> | null = null;
   let liveSegmentCount = 0;
   let lastSegmentEndTime = 0;
   let currentLiveSpeaker = 0;
-  const PAUSE_THRESHOLD = 3.0; // seconds — same as PauseBasedDiarizationBackend
+  const PAUSE_THRESHOLD = 3.0;
 
   const root = document.createElement('div');
   root.id = 'app-shell';
   root.style.cssText = 'display:flex;flex-direction:column;min-height:100vh;';
+
+  // --- Auth screen ---
+  const authScreen = createAuthScreen({
+    onAuthenticated: () => {
+      pipeline.init().catch(console.error);
+      navigateTo('home');
+      dashboard.refresh();
+    },
+  });
 
   // --- Screens ---
   const dashboard = createDashboardScreen({
@@ -49,6 +73,28 @@ export function createApp(): AppUI {
     onSearchClick: () => navigateTo('search'),
     onMeetingClick: (id: string) => showMeetingDetail(id),
     getMeetings: () => pipeline.getMeetings(),
+    onNextPage: () => {
+      if (pipeline.currentPage < pipeline.totalPages) {
+        pipeline.loadMeetingsFromAPI(pipeline.currentPage + 1)
+          .then(() => dashboard.refresh())
+          .catch(console.error);
+      }
+    },
+    onPrevPage: () => {
+      if (pipeline.currentPage > 1) {
+        pipeline.loadMeetingsFromAPI(pipeline.currentPage - 1)
+          .then(() => dashboard.refresh())
+          .catch(console.error);
+      }
+    },
+    getPagination: () => ({
+      page: pipeline.currentPage,
+      totalPages: pipeline.totalPages,
+    }),
+    onLogout: async () => {
+      await apiLogout();
+      navigateTo('auth');
+    },
   });
 
   const recording = createRecordingScreen({
@@ -80,7 +126,7 @@ export function createApp(): AppUI {
           border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite;"></div>
       </div>
       <div style="font-family:var(--font-display);font-size:20px;font-weight:700;text-align:center;">
-        Procesando grabación...
+        Procesando grabaci\u00f3n...
       </div>
       <div style="font-size:14px;color:var(--text-secondary);text-align:center;">
         Identificando hablantes y generando resumen.
@@ -92,22 +138,15 @@ export function createApp(): AppUI {
   // Calendar placeholder
   const calendarScreen = document.createElement('div');
   calendarScreen.className = 'screen';
-  calendarScreen.innerHTML = `
-    <div class="settings-screen">
-      <div class="settings-title">Calendario</div>
-      <p style="color:var(--text-secondary);font-size:14px;">Próximamente: integración con Google Calendar y Microsoft Teams.</p>
-    </div>`;
+  calendarScreen.innerHTML = '<div class="settings-screen"><div class="settings-title">Calendario</div><p style="color:var(--text-secondary);font-size:14px;">Pr\u00f3ximamente: integraci\u00f3n con Google Calendar y Microsoft Teams.</p></div>';
 
   // Settings placeholder
   const settingsScreen = document.createElement('div');
   settingsScreen.className = 'screen';
-  settingsScreen.innerHTML = `
-    <div class="settings-screen">
-      <div class="settings-title">Ajustes</div>
-      <p style="color:var(--text-secondary);font-size:14px;">Configuración de cuenta, idioma y preferencias.</p>
-    </div>`;
+  settingsScreen.innerHTML = '<div class="settings-screen"><div class="settings-title">Ajustes</div><p style="color:var(--text-secondary);font-size:14px;">Configuraci\u00f3n de cuenta, idioma y preferencias.</p></div>';
 
   const screens = new Map<ScreenId, HTMLElement>([
+    ['auth', authScreen.element],
     ['home', dashboard.element],
     ['search', searchScreen.element],
     ['calendar', calendarScreen],
@@ -123,7 +162,7 @@ export function createApp(): AppUI {
   const nav = document.createElement('nav');
   nav.className = 'nav-bar';
   nav.setAttribute('role', 'navigation');
-  nav.setAttribute('aria-label', 'Navegación principal');
+  nav.setAttribute('aria-label', 'Navegaci\u00f3n principal');
 
   const navButtons = new Map<ScreenId, HTMLButtonElement>();
   NAV_ITEMS.forEach(item => {
@@ -138,7 +177,7 @@ export function createApp(): AppUI {
   });
   root.appendChild(nav);
 
-  const fullscreenScreens: ScreenId[] = ['recording', 'processing', 'detail'];
+  const fullscreenScreens: ScreenId[] = ['auth', 'recording', 'processing', 'detail'];
 
   function navigateTo(screen: ScreenId): void {
     screens.forEach((el, id) => {
@@ -150,6 +189,13 @@ export function createApp(): AppUI {
     });
   }
 
+  // Listen for auth state changes (e.g. token expiry -> redirect to login)
+  onAuthChange((loggedIn) => {
+    if (!loggedIn) {
+      navigateTo('auth');
+    }
+  });
+
   async function startRecording(): Promise<void> {
     try {
       liveSegmentCount = 0;
@@ -157,7 +203,7 @@ export function createApp(): AppUI {
       currentLiveSpeaker = 0;
       recording.reset();
       navigateTo('recording');
-      recording.updateSpeakerInfo('Iniciando grabación...');
+      recording.updateSpeakerInfo('Iniciando grabaci\u00f3n...');
 
       await pipeline.startRecording('es', {
         onInterim: (text) => {
@@ -166,7 +212,6 @@ export function createApp(): AppUI {
         },
         onSegment: (segment) => {
           liveSegmentCount++;
-          // Detect speaker change based on pause (same logic as PauseBasedDiarizationBackend)
           if (liveSegmentCount > 1 && (segment.startTime - lastSegmentEndTime) > PAUSE_THRESHOLD) {
             currentLiveSpeaker = currentLiveSpeaker === 0 ? 1 : 0;
           }
@@ -178,7 +223,7 @@ export function createApp(): AppUI {
           recording.updateSpeakerInfo(`${speakerLabel} detectado`);
         },
         onError: (err) => {
-          recording.updateSpeakerInfo('Transcripción en vivo no disponible');
+          recording.updateSpeakerInfo('Transcripci\u00f3n en vivo no disponible');
           recording.addTranscriptLine('Sistema', err, 'var(--text-tertiary)');
         },
       });
@@ -191,7 +236,7 @@ export function createApp(): AppUI {
       }, 1000);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      alert(`No se pudo iniciar la grabación: ${msg}`);
+      alert(`No se pudo iniciar la grabaci\u00f3n: ${msg}`);
       navigateTo('home');
     }
   }
@@ -222,7 +267,6 @@ export function createApp(): AppUI {
       }
     } catch (err) {
       console.error('Processing failed:', err);
-      // Even on error, try to go home gracefully
       dashboard.refresh();
       navigateTo('home');
       alert(`Error al procesar: ${err instanceof Error ? err.message : String(err)}`);
@@ -230,14 +274,29 @@ export function createApp(): AppUI {
   }
 
   function showMeetingDetail(meetingId: string): void {
+    // Try local first, then API
     const meeting = pipeline.getMeeting(meetingId);
     if (meeting) {
       detail.show(meeting);
       navigateTo('detail');
+      return;
+    }
+    if (hasTokens()) {
+      apiGetTranscription(meetingId).then(res => {
+        const m = apiTranscriptionToMeetingRecord(res.data);
+        detail.show(m);
+        navigateTo('detail');
+      }).catch(() => { /* ignore */ });
     }
   }
 
-  navigateTo('home');
+  // Initial screen: auth if no tokens, home otherwise
+  if (hasTokens()) {
+    pipeline.init().catch(console.error);
+    navigateTo('home');
+  } else {
+    navigateTo('auth');
+  }
 
   return { root, navigateTo };
 }

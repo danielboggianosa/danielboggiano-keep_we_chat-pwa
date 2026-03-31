@@ -1,12 +1,13 @@
 /**
- * Feature: meeting-transcription, Property 8: Correctitud de búsqueda con filtros y control de acceso
+ * Feature: production-readiness, Property 10: Búsqueda respeta filtros y control de acceso
  *
- * Validates: Requirements 7.1, 7.2, 7.3, 9.3
+ * Validates: Requirements 4.2, 4.3, 4.4
  *
- * Property: For every search query with filters (date range, speaker, language),
- * all returned results must: (a) belong to transcriptions accessible by the user
- * (owned or shared), (b) satisfy all applied filters, and (c) contain the matched
- * fragment with context, speaker info, and meeting date.
+ * Property: For every search query with filters (date range, speaker, language)
+ * and a given user, all returned results must: (a) belong to transcriptions
+ * accessible by the user (owned or shared), (b) satisfy all applied filters,
+ * and (c) contain the required fields: matched fragment, context, speaker, and
+ * meeting date.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -96,8 +97,11 @@ function buildTranscription(setup: TranscriptionSetup): IndexedTranscription {
 
 // ── Property tests ────────────────────────────────────────────────
 
-describe('Property 8: Correctitud de búsqueda con filtros y control de acceso', () => {
-  it('all results belong to accessible transcriptions, satisfy filters, and contain context', () => {
+describe('Feature: production-readiness, Property 10: Búsqueda respeta filtros y control de acceso', () => {
+  /**
+   * **Validates: Requirements 4.2, 4.3, 4.4**
+   */
+  it('all results belong to accessible transcriptions, satisfy filters, and contain required fields', () => {
     fc.assert(
       fc.property(
         // Generate 2-4 transcriptions across 2 owners

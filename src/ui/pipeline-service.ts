@@ -4,6 +4,9 @@
  * Uses LiveTranscriber (Web Speech API) for real-time transcription during recording.
  * On stop: takes the live segments → Diarization → NLP → IndexedDB.
  * Falls back to stub STT if Web Speech API is not available.
+ *
+ * When the user is authenticated (hasTokens()), meetings are loaded from the
+ * real API Gateway instead of IndexedDB.
  */
 
 import type { AudioFile } from '../types/audio';
@@ -19,6 +22,14 @@ import { LiveTranscriber, type LiveSegment } from '../modules/live-transcriber';
 import { dbPut, dbGetAll } from '../db/db-operations';
 import { STORES } from '../db/indexed-db';
 import type { StoredTranscription } from '../modules/cloud-reprocessor';
+import {
+  hasTokens,
+  apiGetTranscriptions,
+  apiGetTranscription,
+  apiTranscriptionToMeetingRecord,
+  type PaginatedResponse,
+  type ApiTranscription,
+} from './api-client';
 
 export interface ProcessingResult {
   transcriptionId: string;
@@ -59,6 +70,10 @@ export class PipelineService {
   private liveTranscriber: LiveTranscriber | null = null;
   private currentLanguage: 'es' | 'en' = 'es';
 
+  /** Pagination state for API-backed listing */
+  currentPage = 1;
+  totalPages = 1;
+
   constructor() {
     this.sttEngine = new LocalSTTEngine();
     this.diarization = new DiarizationEngine();
@@ -67,7 +82,37 @@ export class PipelineService {
 
   async init(): Promise<void> {
     await this.sttEngine.loadModel();
-    await this.loadMeetingsFromDB();
+    if (hasTokens()) {
+      await this.loadMeetingsFromAPI();
+    } else {
+      await this.loadMeetingsFromDB();
+    }
+  }
+
+  /**
+   * Load meetings from the real API Gateway (GET /api/transcriptions).
+   */
+  async loadMeetingsFromAPI(page = 1): Promise<void> {
+    try {
+      const res: PaginatedResponse<ApiTranscription> = await apiGetTranscriptions(page);
+      this.currentPage = res.pagination.page;
+      this.totalPages = Math.max(1, Math.ceil(res.pagination.total / res.pagination.limit));
+
+      // For each transcription in the list, fetch full detail to build MeetingRecord
+      const records: MeetingRecord[] = [];
+      for (const t of res.data) {
+        try {
+          const detail = await apiGetTranscription(t.id);
+          records.push(apiTranscriptionToMeetingRecord(detail.data));
+        } catch {
+          // Skip individual failures
+        }
+      }
+      this.meetings = records;
+    } catch {
+      // Fall back to local DB if API is unreachable
+      await this.loadMeetingsFromDB();
+    }
   }
 
   /**

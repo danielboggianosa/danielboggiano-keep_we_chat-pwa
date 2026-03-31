@@ -25,4 +25,4 @@ EXPOSE 4002
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:4002/health')" || exit 1
 
-CMD ["python", "-m", "src.main"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "4002"]

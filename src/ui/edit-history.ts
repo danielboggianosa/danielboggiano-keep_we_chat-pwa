@@ -1,8 +1,11 @@
 /**
  * Edit history view component.
  * Displays the log of edits made to a transcription.
- * Requirement 8.3: Show edit history to users with access.
+ * Connected to GET /api/transcriptions/:id/edits for real data.
+ * Requirement 7.7, 8.3: Show edit history to users with access.
  */
+
+import { apiGetEditHistory, apiEditRecordToEntry, hasTokens } from './api-client';
 
 export interface EditHistoryEntry {
   editedBy: string;
@@ -15,6 +18,7 @@ export interface EditHistoryEntry {
 export function createEditHistory(): {
   element: HTMLElement;
   update: (entries: EditHistoryEntry[]) => void;
+  loadFromAPI: (transcriptionId: string) => Promise<void>;
 } {
   const el = document.createElement('div');
   el.className = 'panel';
@@ -57,7 +61,25 @@ export function createEditHistory(): {
     });
   }
 
-  return { element: el, update };
+  async function loadFromAPI(transcriptionId: string): Promise<void> {
+    await loadFromAPIImpl(transcriptionId, update);
+  }
+
+  return { element: el, update, loadFromAPI };
+}
+
+async function loadFromAPIImpl(
+  transcriptionId: string,
+  updateFn: (entries: EditHistoryEntry[]) => void,
+): Promise<void> {
+  if (!hasTokens()) return;
+  try {
+    const res = await apiGetEditHistory(transcriptionId);
+    const entries = res.data.map(apiEditRecordToEntry);
+    updateFn(entries);
+  } catch {
+    // Silently fail
+  }
 }
 
 function escapeHtml(text: string): string {

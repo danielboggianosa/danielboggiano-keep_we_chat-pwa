@@ -1,1 +1,8 @@
-flask==3.0.*
+setuptools>=75.0.0
+wheel
+numpy
+torch>=2.0.0,<3.0.0
+fastapi==0.115.*
+uvicorn[standard]==0.34.*
+python-multipart==0.0.*
+prometheus-client==0.21.*

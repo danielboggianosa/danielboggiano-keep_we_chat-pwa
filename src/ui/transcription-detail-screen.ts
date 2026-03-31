@@ -7,6 +7,8 @@ import { icons } from './icons';
 import type { MeetingRecord } from './pipeline-service';
 import type { ExportService } from '../modules/export-service';
 import type { ExportFormat } from '../types/export';
+import { apiEditSegment, apiShareTranscription, apiGetEditHistory, apiEditRecordToEntry, hasTokens } from './api-client';
+import { createEditHistory, type EditHistoryEntry } from './edit-history';
 
 const SPEAKER_COLORS = [
   'var(--accent-coral)',
@@ -52,6 +54,7 @@ export function createTranscriptionDetailScreen(cb: DetailCallbacks): Transcript
       <button class="filter-chip active" type="button" data-tab="transcript">Transcripción</button>
       <button class="filter-chip" type="button" data-tab="summary">Resumen</button>
       <button class="filter-chip" type="button" data-tab="actions">Accionables</button>
+      <button class="filter-chip" type="button" data-tab="edits">Ediciones</button>
     </div>
 
     <!-- Tab content -->
@@ -78,6 +81,39 @@ export function createTranscriptionDetailScreen(cb: DetailCallbacks): Transcript
         </button>
       </div>
     </div>
+
+    <!-- Share modal (hidden) -->
+    <div id="share-modal" class="hidden" style="
+      position:fixed;top:0;left:0;right:0;bottom:0;
+      background:rgba(0,0,0,0.4);z-index:200;
+      display:flex;align-items:flex-end;justify-content:center;">
+      <div style="
+        background:var(--bg-primary);border-radius:24px 24px 0 0;
+        padding:24px;width:100%;max-width:430px;">
+        <div style="font-family:var(--font-display);font-size:18px;font-weight:700;margin-bottom:16px;">
+          Compartir transcripción
+        </div>
+        <form id="share-form" style="display:flex;flex-direction:column;gap:12px;">
+          <input type="email" name="email" required placeholder="Email del usuario" style="padding:12px;border:1px solid var(--border-color,#e0e0e0);border-radius:12px;font-size:14px;font-family:inherit;" />
+          <select name="permission" style="padding:12px;border:1px solid var(--border-color,#e0e0e0);border-radius:12px;font-size:14px;font-family:inherit;">
+            <option value="read">Solo lectura</option>
+            <option value="read-write">Lectura y escritura</option>
+          </select>
+          <div id="share-error" style="display:none;color:var(--accent-coral,#e74c3c);font-size:13px;"></div>
+          <div id="share-success" style="display:none;color:var(--accent-green,#22c55e);font-size:13px;"></div>
+          <button type="submit" style="padding:14px;border:none;border-radius:14px;background:var(--accent-indigo,#6366f1);color:#fff;font-family:inherit;font-size:15px;font-weight:700;cursor:pointer;">
+            Compartir
+          </button>
+        </form>
+        <button type="button" id="share-cancel" style="
+          margin-top:12px;width:100%;padding:14px;border:none;
+          border-radius:16px;background:var(--bg-surface);
+          font-family:var(--font-body);font-size:15px;font-weight:600;
+          cursor:pointer;color:var(--text-secondary);">
+          Cancelar
+        </button>
+      </div>
+    </div>
   `;
 
   const titleEl = el.querySelector('#detail-title') as HTMLElement;
@@ -86,6 +122,10 @@ export function createTranscriptionDetailScreen(cb: DetailCallbacks): Transcript
   const contentEl = el.querySelector('#detail-content') as HTMLElement;
   const exportModal = el.querySelector('#export-modal') as HTMLElement;
   const exportOptions = el.querySelector('#export-options') as HTMLElement;
+  const shareModal = el.querySelector('#share-modal') as HTMLElement;
+  const shareForm = el.querySelector('#share-form') as HTMLFormElement;
+  const shareError = el.querySelector('#share-error') as HTMLElement;
+  const shareSuccess = el.querySelector('#share-success') as HTMLElement;
   const tabs = el.querySelectorAll('[data-tab]') as NodeListOf<HTMLButtonElement>;
 
   let currentMeeting: MeetingRecord | null = null;
@@ -112,6 +152,39 @@ export function createTranscriptionDetailScreen(cb: DetailCallbacks): Transcript
   });
   exportModal.addEventListener('click', (e) => {
     if (e.target === exportModal) exportModal.classList.add('hidden');
+  });
+
+  // Share button
+  el.querySelector('#detail-share')!.addEventListener('click', () => {
+    shareModal.classList.remove('hidden');
+    shareModal.style.display = 'flex';
+    shareError.style.display = 'none';
+    shareSuccess.style.display = 'none';
+  });
+  el.querySelector('#share-cancel')!.addEventListener('click', () => {
+    shareModal.classList.add('hidden');
+  });
+  shareModal.addEventListener('click', (e) => {
+    if (e.target === shareModal) shareModal.classList.add('hidden');
+  });
+  shareForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!currentMeeting || !hasTokens()) return;
+    shareError.style.display = 'none';
+    shareSuccess.style.display = 'none';
+    const fd = new FormData(shareForm);
+    const email = (fd.get('email') as string).trim();
+    const permission = fd.get('permission') as 'read' | 'read-write';
+    try {
+      await apiShareTranscription(currentMeeting.id, email, permission);
+      shareSuccess.textContent = `Compartido con ${email}`;
+      shareSuccess.style.display = 'block';
+      shareForm.reset();
+    } catch (err: unknown) {
+      const apiErr = err as { error?: string };
+      shareError.textContent = apiErr.error ?? 'Error al compartir';
+      shareError.style.display = 'block';
+    }
   });
 
   function formatDuration(seconds: number): string {
@@ -142,6 +215,8 @@ export function createTranscriptionDetailScreen(cb: DetailCallbacks): Transcript
       renderTranscript(meeting);
     } else if (activeTab === 'summary') {
       renderSummary(meeting);
+    } else if (activeTab === 'edits') {
+      renderEdits(meeting);
     } else {
       renderActions(meeting);
     }
@@ -151,16 +226,52 @@ export function createTranscriptionDetailScreen(cb: DetailCallbacks): Transcript
     const speakerMap = new Map<string, number>();
     meeting.transcription.speakers.forEach((s, i) => speakerMap.set(s.id, i));
 
-    contentEl.innerHTML = meeting.transcription.segments.map(seg => {
-      const idx = speakerMap.get(seg.speakerId) ?? 0;
-      const color = getSpeakerColor(idx);
+    contentEl.innerHTML = meeting.transcription.segments.map((seg, idx) => {
+      const sidx = speakerMap.get(seg.speakerId) ?? 0;
+      const color = getSpeakerColor(sidx);
       return `
-        <div class="trans-segment">
+        <div class="trans-segment" data-seg-idx="${idx}">
           <span class="trans-seg-time">${formatTime(seg.startTime)} — ${formatTime(seg.endTime)}</span>
           <span class="trans-seg-speaker" style="color:${color}">${esc(seg.speakerLabel)}</span>
-          <span class="trans-seg-text">${esc(seg.text)}</span>
+          <span class="trans-seg-text" data-seg-text="${idx}">${esc(seg.text)}</span>
+          ${hasTokens() ? `<button type="button" class="seg-edit-btn" data-edit-idx="${idx}" style="
+            background:none;border:none;cursor:pointer;font-size:11px;color:var(--accent-indigo,#6366f1);padding:2px 6px;margin-left:4px;">
+            ✎
+          </button>` : ''}
         </div>`;
     }).join('');
+
+    // Wire inline edit buttons
+    contentEl.querySelectorAll('.seg-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt((btn as HTMLElement).dataset.editIdx!, 10);
+        const textEl = contentEl.querySelector(`[data-seg-text="${idx}"]`) as HTMLElement;
+        if (!textEl || !currentMeeting) return;
+        const currentText = currentMeeting.transcription.segments[idx].text;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = currentText;
+        input.style.cssText = 'width:100%;padding:4px 8px;border:1px solid var(--accent-indigo,#6366f1);border-radius:6px;font-size:13px;font-family:inherit;';
+        textEl.replaceWith(input);
+        input.focus();
+
+        const save = async () => {
+          const newText = input.value.trim();
+          if (newText && newText !== currentText && currentMeeting) {
+            try {
+              await apiEditSegment(currentMeeting.id, idx, newText);
+              currentMeeting.transcription.segments[idx].text = newText;
+            } catch {
+              // revert on failure
+            }
+          }
+          renderTranscript(currentMeeting!);
+        };
+
+        input.addEventListener('blur', save);
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } if (e.key === 'Escape') { renderTranscript(currentMeeting!); } });
+      });
+    });
   }
 
   function renderSummary(meeting: MeetingRecord): void {
@@ -222,6 +333,35 @@ export function createTranscriptionDetailScreen(cb: DetailCallbacks): Transcript
           </div>
         `).join('')}
       </div>`;
+  }
+
+  async function renderEdits(meeting: MeetingRecord): Promise<void> {
+    if (!hasTokens()) {
+      contentEl.innerHTML = `
+        <div style="text-align:center;padding:32px;color:var(--text-tertiary);font-size:14px;">
+          Inicia sesión para ver el historial de ediciones.
+        </div>`;
+      return;
+    }
+
+    contentEl.innerHTML = `
+      <div style="text-align:center;padding:32px;color:var(--text-tertiary);font-size:14px;">
+        Cargando historial...
+      </div>`;
+
+    try {
+      const res = await apiGetEditHistory(meeting.id);
+      const entries: EditHistoryEntry[] = res.data.map(apiEditRecordToEntry);
+      const editView = createEditHistory();
+      editView.update(entries);
+      contentEl.innerHTML = '';
+      contentEl.appendChild(editView.element);
+    } catch {
+      contentEl.innerHTML = `
+        <div style="text-align:center;padding:32px;color:var(--text-tertiary);font-size:14px;">
+          No se pudo cargar el historial de ediciones.
+        </div>`;
+    }
   }
 
   function doExport(format: ExportFormat): void {

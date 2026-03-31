@@ -6,8 +6,8 @@ Implementación incremental para llevar a producción la PWA KeepWeChat. Se reem
 
 ## Tareas
 
-- [ ] 1. Crear migraciones PostgreSQL y esquema de base de datos
-  - [ ] 1.1 Crear estructura de migraciones y las 12 migraciones SQL
+- [x] 1. Crear migraciones PostgreSQL y esquema de base de datos
+  - [x] 1.1 Crear estructura de migraciones y las 12 migraciones SQL
     - Crear directorio `services/api-gateway/migrations/`
     - Crear `001_create_users.sql`: tabla `users` con campos id, email, name, password_hash, role, is_active, timestamps
     - Crear `002_create_transcriptions.sql`: tabla `transcriptions` con owner_id FK, title, language, audio_file_url, status, duration, recorded_at
@@ -23,21 +23,21 @@ Implementación incremental para llevar a producción la PWA KeepWeChat. Se reem
     - Crear `012_create_indexes.sql`: todos los índices (GIN para tsvector, FKs, búsquedas frecuentes) y trigger `update_search_vector()`
     - _Requisitos: 6.1, 6.2, 6.4, 6.5_
 
-  - [ ] 1.2 Implementar runner de migraciones y foreign keys/constraints
+  - [x] 1.2 Implementar runner de migraciones y foreign keys/constraints
     - Agregar dependencia `pg` y `node-pg-migrate` al API Gateway
     - Crear script de ejecución de migraciones que se ejecute al inicio del servicio
     - Implementar todos los constraints CHECK (confidence 0-1, startTime < endTime, roles válidos, language es|en, permission read|read-write)
     - Implementar todas las foreign keys con ON DELETE CASCADE donde corresponda
     - _Requisitos: 6.2, 6.3, 6.5_
 
-  - [ ]* 1.3 Escribir test de propiedad para integridad referencial de la BD
+  - [x] 1.3 Escribir test de propiedad para integridad referencial de la BD
     - **Propiedad 13: Integridad referencial de la base de datos**
     - Generar inserciones con FKs válidas e inválidas y verificar que la BD rechaza las inválidas
     - Verificar constraints CHECK (confidence entre 0-1, startTime < endTime, roles válidos)
     - **Valida: Requisito 6.5**
 
-- [ ] 2. Implementar API Gateway con autenticación y seguridad
-  - [ ] 2.1 Implementar middleware stack del API Gateway
+- [x] 2. Implementar API Gateway con autenticación y seguridad
+  - [x] 2.1 Implementar middleware stack del API Gateway
     - Agregar dependencias: `jsonwebtoken`, `bcrypt`, `zod`, `helmet`, `cors`, `express-rate-limit`, `pg`, `prom-client`, `winston`
     - Implementar middleware de security headers con helmet (CSP, X-Content-Type-Options, X-Frame-Options, HSTS)
     - Implementar middleware CORS con orígenes desde variable de entorno `ALLOWED_ORIGINS`
@@ -45,21 +45,21 @@ Implementación incremental para llevar a producción la PWA KeepWeChat. Se reem
     - Implementar middleware de request ID + logging estructurado JSON con winston
     - _Requisitos: 1.8, 9.3, 9.4, 10.1_
 
-  - [ ] 2.2 Implementar autenticación JWT con rotación de refresh tokens
+  - [x] 2.2 Implementar autenticación JWT con rotación de refresh tokens
     - Implementar endpoints POST `/api/auth/register` (bcrypt cost 12), `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`
     - Implementar middleware JWT que valida access token (15min expiración) en todas las rutas excepto /health, /auth/login, /auth/register
     - Implementar rotación de refresh tokens: al usar un refresh token, invalidar el anterior y emitir uno nuevo (7 días)
     - Registrar intentos de autenticación fallidos en tabla `auth_events` con IP y timestamp
     - _Requisitos: 1.2, 1.3, 9.1, 9.2, 9.5, 9.6_
 
-  - [ ] 2.3 Implementar rate limiting y validación de esquemas Zod
+  - [x] 2.3 Implementar rate limiting y validación de esquemas Zod
     - Implementar rate limiter: 100 req/min por userId, respuesta 429 con header Retry-After
     - Definir esquemas Zod para cada ruta (transcripciones CRUD, auth, búsqueda, calendario, sync, export)
     - Implementar middleware de validación que retorna 400 con lista de campos con errores
     - Implementar sanitización de inputs contra SQL injection y XSS
     - _Requisitos: 1.4, 1.5, 1.6, 1.7, 9.3_
 
-  - [ ] 2.4 Implementar endpoints REST de transcripciones, ediciones y compartición
+  - [x] 2.4 Implementar endpoints REST de transcripciones, ediciones y compartición
     - Implementar CRUD de transcripciones: GET/POST/PUT/DELETE `/api/transcriptions` y `/api/transcriptions/:id`
     - Implementar edición de segmentos: POST `/api/transcriptions/:id/segments/:idx/edit` y GET `/api/transcriptions/:id/edits`
     - Implementar compartición: POST/GET `/api/transcriptions/:id/share`
@@ -67,31 +67,31 @@ Implementación incremental para llevar a producción la PWA KeepWeChat. Se reem
     - Implementar POST `/api/sync` para sincronización batch y GET `/api/export/:id/:format`
     - _Requisitos: 1.1_
 
-  - [ ]* 2.5 Escribir test de propiedad para validación JWT
+  - [x] 2.5 Escribir test de propiedad para validación JWT
     - **Propiedad 1: Validación JWT rechaza tokens inválidos**
     - Generar tokens con secretos aleatorios, timestamps expirados, payloads malformados
     - Verificar que todos son rechazados con HTTP 401 y no se enrutan al microservicio
     - **Valida: Requisitos 1.2, 1.3**
 
-  - [ ]* 2.6 Escribir test de propiedad para rate limiting
+  - [x] 2.6 Escribir test de propiedad para rate limiting
     - **Propiedad 2: Rate limiting por usuario**
     - Generar secuencias de N requests (N entre 1 y 200) para un usuario
     - Verificar que las primeras 100 pasan y las siguientes reciben 429 con Retry-After positivo
     - **Valida: Requisitos 1.4, 1.5**
 
-  - [ ]* 2.7 Escribir test de propiedad para validación de esquemas Zod
+  - [x] 2.7 Escribir test de propiedad para validación de esquemas Zod
     - **Propiedad 3: Validación de esquema de peticiones**
     - Generar bodies JSON aleatorios (válidos e inválidos) contra esquemas Zod definidos
     - Verificar que inválidos reciben 400 con lista de errores y válidos son aceptados
     - **Valida: Requisitos 1.6, 1.7**
 
-  - [ ]* 2.8 Escribir test de propiedad para CORS
+  - [x] 2.8 Escribir test de propiedad para CORS
     - **Propiedad 4: CORS rechaza orígenes no autorizados**
     - Generar URLs de origen aleatorias y verificar contra lista de permitidos
     - Verificar que orígenes no autorizados no reciben header Access-Control-Allow-Origin
     - **Valida: Requisito 1.8**
 
-  - [ ]* 2.9 Escribir tests de propiedad para seguridad (tokens, bcrypt, sanitización, headers, auditoría, rotación)
+  - [x] 2.9 Escribir tests de propiedad para seguridad (tokens, bcrypt, sanitización, headers, auditoría, rotación)
     - **Propiedad 17: Tiempos de expiración de tokens JWT** — Verificar access token 15min, refresh token 7 días
     - **Propiedad 18: Contraseñas hasheadas con bcrypt cost ≥ 12** — Generar contraseñas, hashear, verificar prefijo `$2b$12`
     - **Propiedad 19: Sanitización de inputs contra inyección** — Generar payloads SQL/XSS, verificar sanitización
@@ -101,11 +101,11 @@ Implementación incremental para llevar a producción la PWA KeepWeChat. Se reem
     - **Valida: Requisitos 9.1, 9.2, 9.3, 9.4, 9.5, 9.6**
 
 
-- [ ] 3. Checkpoint - Verificar base de datos y API Gateway
+- [x] 3. Checkpoint - Verificar base de datos y API Gateway
   - Asegurar que todos los tests pasan, preguntar al usuario si surgen dudas.
 
-- [ ] 4. Implementar Motor STT Nube real (FastAPI + Whisper)
-  - [ ] 4.1 Implementar servicio STT con FastAPI y Whisper
+- [x] 4. Implementar Motor STT Nube real (FastAPI + Whisper)
+  - [x] 4.1 Implementar servicio STT con FastAPI y Whisper
     - Reemplazar stub Flask en `services/stt-cloud/src/main.py` por FastAPI con uvicorn
     - Actualizar `services/stt-cloud/requirements.txt` con fastapi, uvicorn, openai-whisper, torch, python-multipart, prometheus-client
     - Implementar endpoint POST `/transcribe` que recibe audio multipart/form-data y retorna JSON compatible con `RawTranscription`
@@ -115,14 +115,14 @@ Implementación incremental para llevar a producción la PWA KeepWeChat. Se reem
     - Actualizar Dockerfile para instalar dependencias de Whisper y torch
     - _Requisitos: 2.1, 2.2, 2.3, 2.4, 2.5, 10.4_
 
-  - [ ]* 4.2 Escribir test de propiedad para compatibilidad de respuesta STT
+  - [x] 4.2 Escribir test de propiedad para compatibilidad de respuesta STT
     - **Propiedad 5: Respuesta STT compatible con RawTranscription**
     - Generar respuestas de transcripción y verificar que cada segmento tiene startTime ≥ 0, endTime > startTime, text no vacío, confidence entre 0 y 1
     - Verificar campos language y duration presentes
     - **Valida: Requisitos 2.1, 2.5**
 
-- [ ] 5. Implementar Servicio NLP real (FastAPI + LLM)
-  - [ ] 5.1 Implementar servicio NLP con FastAPI y OpenAI SDK
+- [x] 5. Implementar Servicio NLP real (FastAPI + LLM)
+  - [x] 5.1 Implementar servicio NLP con FastAPI y OpenAI SDK
     - Reemplazar stub Flask en `services/nlp-service/src/main.py` por FastAPI con uvicorn
     - Actualizar `services/nlp-service/requirements.txt` con fastapi, uvicorn, openai, prometheus-client
     - Implementar endpoint POST `/summary` que recibe TranscriptionInput y retorna SummaryResponse
@@ -134,15 +134,15 @@ Implementación incremental para llevar a producción la PWA KeepWeChat. Se reem
     - Actualizar Dockerfile
     - _Requisitos: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 10.4_
 
-  - [ ]* 5.2 Escribir tests de propiedad para NLP (resumen, accionables, actas, idioma)
+  - [x] 5.2 Escribir tests de propiedad para NLP (resumen, accionables, actas, idioma)
     - **Propiedad 6: Resumen NLP contiene al menos un tema** — Verificar array topics no vacío y language presente
     - **Propiedad 7: Accionables NLP referencian hablantes válidos** — Verificar assignedTo es speakerId válido o "unassigned"
     - **Propiedad 8: Acta formal contiene todas las secciones requeridas** — Verificar attendees, topicsDiscussed, decisions, actionItems
     - **Propiedad 9: Idioma de respuesta NLP coincide con transcripción fuente** — Verificar language de respuesta = language de input
     - **Valida: Requisitos 3.1, 3.2, 3.3, 3.4, 3.6**
 
-- [ ] 6. Implementar Servicio de Búsqueda real (Express + PostgreSQL tsvector)
-  - [ ] 6.1 Implementar búsqueda full-text con PostgreSQL
+- [x] 6. Implementar Servicio de Búsqueda real (Express + PostgreSQL tsvector)
+  - [x] 6.1 Implementar búsqueda full-text con PostgreSQL
     - Reemplazar stub en `services/search-service/src/index.ts` por implementación real
     - Agregar dependencias: `pg`, `prom-client`, `winston`
     - Implementar endpoint GET `/search` con query params: q, dateFrom, dateTo, speaker, lang, page
@@ -153,14 +153,14 @@ Implementación incremental para llevar a producción la PWA KeepWeChat. Se reem
     - Implementar endpoints GET `/health` y GET `/metrics`
     - _Requisitos: 4.1, 4.2, 4.3, 4.4, 4.5, 10.4_
 
-  - [ ]* 6.2 Escribir test de propiedad para búsqueda con filtros y control de acceso
+  - [x] 6.2 Escribir test de propiedad para búsqueda con filtros y control de acceso
     - **Propiedad 10: Búsqueda respeta filtros y control de acceso**
     - Generar conjuntos de transcripciones con distintos propietarios, permisos y filtros
     - Verificar que resultados cumplen filtros, pertenecen a transcripciones accesibles, y contienen campos requeridos
     - **Valida: Requisitos 4.2, 4.3, 4.4**
 
-- [ ] 7. Implementar Servicio de Calendario real (Express + OAuth 2.0)
-  - [ ] 7.1 Implementar flujo OAuth y gestión de eventos de calendario
+- [x] 7. Implementar Servicio de Calendario real (Express + OAuth 2.0)
+  - [x] 7.1 Implementar flujo OAuth y gestión de eventos de calendario
     - Reemplazar stub en `services/calendar-service/src/index.ts` por implementación real
     - Agregar dependencias: `googleapis`, `@azure/msal-node`, `pg`, `prom-client`, `winston`
     - Implementar GET `/connect/:provider` que redirige a OAuth del proveedor (Google Calendar, Teams Calendar)
@@ -171,16 +171,16 @@ Implementación incremental para llevar a producción la PWA KeepWeChat. Se reem
     - Implementar endpoints GET `/health` y GET `/metrics`
     - _Requisitos: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 10.4_
 
-  - [ ]* 7.2 Escribir tests de propiedad para calendario (renovación de tokens, compatibilidad de eventos)
+  - [x] 7.2 Escribir tests de propiedad para calendario (renovación de tokens, compatibilidad de eventos)
     - **Propiedad 11: Renovación automática de tokens de calendario** — Verificar renovación con refresh token válido y cambio a requires_reauth con inválido
     - **Propiedad 12: Eventos de calendario compatibles con CalendarEvent** — Verificar deserialización con campos id, title, startTime, endTime, participants, provider
     - **Valida: Requisitos 5.3, 5.4, 5.5**
 
-- [ ] 8. Checkpoint - Verificar todos los servicios backend
+- [x] 8. Checkpoint - Verificar todos los servicios backend
   - Asegurar que todos los tests pasan, preguntar al usuario si surgen dudas.
 
-- [ ] 9. Implementar Service Worker completo
-  - [ ] 9.1 Implementar estrategias de cache y background sync en el Service Worker
+- [x] 9. Implementar Service Worker completo
+  - [x] 9.1 Implementar estrategias de cache y background sync en el Service Worker
     - Reemplazar `src/sw.ts` con implementación robusta
     - Implementar cache-first para assets estáticos (JS, CSS, HTML, imágenes) con cache versionado `static-v{hash}`
     - Implementar network-first para peticiones API (`/api/*`) con timeout de 5s y fallback a cache
@@ -191,14 +191,14 @@ Implementación incremental para llevar a producción la PWA KeepWeChat. Se reem
     - Crear archivo `public/offline.html` con página de fallback
     - _Requisitos: 8.1, 8.2, 8.3, 8.4, 8.5_
 
-  - [ ]* 9.2 Escribir tests de propiedad para Service Worker (cache-first, network-first, background sync)
+  - [x] 9.2 Escribir tests de propiedad para Service Worker (cache-first, network-first, background sync)
     - **Propiedad 14: SW cache-first para assets estáticos** — Verificar que assets en cache se sirven inmediatamente sin importar estado de red
     - **Propiedad 15: SW network-first con fallback para API** — Verificar red primero, fallback a cache si falla, error offline si no hay cache
     - **Propiedad 16: Background sync encola y reintenta peticiones fallidas** — Verificar encolamiento y reintento al restaurar conectividad
     - **Valida: Requisitos 8.1, 8.2, 8.4**
 
-- [ ] 10. Conectar UI existente a API real
-  - [ ] 10.1 Conectar pantallas UI a los endpoints reales del API Gateway
+- [x] 10. Conectar UI existente a API real
+  - [x] 10.1 Conectar pantallas UI a los endpoints reales del API Gateway
     - Modificar `src/ui/app.ts` y `src/ui/pipeline-service.ts` para usar fetch contra API Gateway real en lugar de módulos locales
     - Conectar dashboard (`dashboard-screen.ts`) a GET `/api/transcriptions` con paginación
     - Conectar pantalla de búsqueda (`search-screen.ts`) a GET `/api/search` con filtros reales (fecha, hablante, idioma)
@@ -209,8 +209,8 @@ Implementación incremental para llevar a producción la PWA KeepWeChat. Se reem
     - Almacenar tokens JWT en memoria (no localStorage) y usar refresh token para renovación
     - _Requisitos: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8_
 
-- [ ] 11. Implementar sistema de monitoreo
-  - [ ] 11.1 Implementar logging estructurado JSON y métricas Prometheus en todos los servicios
+- [x] 11. Implementar sistema de monitoreo
+  - [x] 11.1 Implementar logging estructurado JSON y métricas Prometheus en todos los servicios
     - Configurar winston en servicios Node.js (API Gateway, Search, Calendar) con formato JSON: timestamp, level, service, requestId, message
     - Configurar logging JSON en servicios Python (STT, NLP) con campos equivalentes
     - Implementar middleware de captura de errores no manejados con stack trace y contexto
@@ -220,16 +220,16 @@ Implementación incremental para llevar a producción la PWA KeepWeChat. Se reem
     - Crear archivo `prometheus.yml` con configuración de scraping y regla de alerta (error rate > 5% en 5min)
     - _Requisitos: 10.1, 10.2, 10.3, 10.4, 10.5_
 
-  - [ ]* 11.2 Escribir test de propiedad para logging estructurado
+  - [x] 11.2 Escribir test de propiedad para logging estructurado
     - **Propiedad 23: Logging estructurado en formato JSON**
     - Generar operaciones que producen logs y verificar que cada log es JSON válido con campos timestamp (ISO 8601), level, service, requestId (UUID), message (no vacío)
     - **Valida: Requisito 10.1**
 
-- [ ] 12. Checkpoint - Verificar Service Worker, UI y monitoreo
+- [x] 12. Checkpoint - Verificar Service Worker, UI y monitoreo
   - Asegurar que todos los tests pasan, preguntar al usuario si surgen dudas.
 
-- [ ] 13. Implementar pipeline CI/CD con GitHub Actions
-  - [ ] 13.1 Crear workflow de GitHub Actions
+- [x] 13. Implementar pipeline CI/CD con GitHub Actions
+  - [x] 13.1 Crear workflow de GitHub Actions
     - Crear `.github/workflows/ci.yml` con los stages: Lint + TypeCheck → Tests → Docker Build → Publish → Deploy
     - Stage 1: Ejecutar `tsc --noEmit` y ESLint en todos los servicios TypeScript
     - Stage 2: Ejecutar `vitest --run` (unitarios + propiedades con fast-check) y tests Python con pytest + hypothesis
@@ -239,8 +239,8 @@ Implementación incremental para llevar a producción la PWA KeepWeChat. Se reem
     - Configurar notificación al equipo si algún paso falla
     - _Requisitos: 11.1, 11.2, 11.3, 11.4, 11.5, 11.6_
 
-- [ ] 14. Actualizar Docker Compose y configuración de entorno
-  - [ ] 14.1 Actualizar docker-compose.yml y archivos de configuración
+- [x] 14. Actualizar Docker Compose y configuración de entorno
+  - [x] 14.1 Actualizar docker-compose.yml y archivos de configuración
     - Actualizar `docker-compose.yml` con variables de entorno nuevas (ALLOWED_ORIGINS, etc.)
     - Actualizar `docker-compose.dev.yml` con overrides para desarrollo (hot-reload, volúmenes de código fuente)
     - Actualizar `.env.example` con todas las variables nuevas documentadas
@@ -248,7 +248,7 @@ Implementación incremental para llevar a producción la PWA KeepWeChat. Se reem
     - Verificar que todos los servicios tienen health checks funcionales
     - _Requisitos: 6.3, 10.4_
 
-- [ ] 15. Checkpoint final - Verificar integración completa
+- [x] 15. Checkpoint final - Verificar integración completa
   - Asegurar que todos los tests pasan, preguntar al usuario si surgen dudas.
 
 ## Notas

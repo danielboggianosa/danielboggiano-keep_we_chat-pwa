@@ -23,21 +23,25 @@ services:
       - "9229:9229"
     volumes:
       - ./services/api-gateway/src:/app/src
+      - ./services/api-gateway/migrations:/app/migrations
     command: ["npx", "tsx", "watch", "src/index.ts"]
     environment:
       - NODE_ENV=development
+      - LOG_LEVEL=debug
+      - ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
 
   stt-cloud:
     volumes:
       - ./services/stt-cloud/src:/app/src
-    command: ["python", "-m", "src.main", "--reload"]
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "4001", "--reload"]
     environment:
       - NODE_ENV=development
+      - WHISPER_MODEL=base
 
   nlp-service:
     volumes:
       - ./services/nlp-service/src:/app/src
-    command: ["python", "-m", "src.main", "--reload"]
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "4002", "--reload"]
     environment:
       - NODE_ENV=development
 
@@ -52,6 +56,7 @@ services:
     command: ["npx", "tsx", "watch", "src/index.ts"]
     environment:
       - NODE_ENV=development
+      - LOG_LEVEL=debug
 
   calendar-service:
     build:
@@ -64,6 +69,7 @@ services:
     command: ["npx", "tsx", "watch", "src/index.ts"]
     environment:
       - NODE_ENV=development
+      - LOG_LEVEL=debug
 
   postgres:
     ports:
@@ -73,3 +79,7 @@ services:
     ports:
       - "9000:9000"
       - "9001:9001"
+
+  prometheus:
+    ports:
+      - "9090:9090"

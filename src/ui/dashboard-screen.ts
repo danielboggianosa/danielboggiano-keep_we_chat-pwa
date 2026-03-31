@@ -12,6 +12,10 @@ interface DashboardCallbacks {
   onSearchClick: () => void;
   onMeetingClick: (id: string) => void;
   getMeetings: () => MeetingRecord[];
+  onNextPage?: () => void;
+  onPrevPage?: () => void;
+  getPagination?: () => { page: number; totalPages: number };
+  onLogout?: () => void;
 }
 
 export function createDashboardScreen(cb: DashboardCallbacks): {
@@ -74,6 +78,15 @@ export function createDashboardScreen(cb: DashboardCallbacks): {
            No hay reuniones aún. Graba tu primera reunión.
          </div>`;
 
+    const pagination = cb.getPagination ? cb.getPagination() : null;
+    const paginationHtml = pagination && pagination.totalPages > 1
+      ? `<div style="display:flex;justify-content:center;align-items:center;gap:12px;padding:8px 0;">
+           <button type="button" class="filter-chip" id="dash-prev" ${pagination.page <= 1 ? 'disabled style="opacity:0.4"' : ''}>← Anterior</button>
+           <span style="font-size:13px;color:var(--text-secondary);">Pág. ${pagination.page} / ${pagination.totalPages}</span>
+           <button type="button" class="filter-chip" id="dash-next" ${pagination.page >= pagination.totalPages ? 'disabled style="opacity:0.4"' : ''}>Siguiente →</button>
+         </div>`
+      : '';
+
     el.innerHTML = `
       <!-- Header -->
       <div class="header">
@@ -83,7 +96,7 @@ export function createDashboardScreen(cb: DashboardCallbacks): {
         </div>
         <div class="header-icons">
           <button type="button" aria-label="Notificaciones">${icons.bell}</button>
-          <button type="button" aria-label="Perfil">${icons.user}</button>
+          <button type="button" aria-label="Perfil" id="dash-logout">${icons.user}</button>
         </div>
       </div>
 
@@ -120,6 +133,8 @@ export function createDashboardScreen(cb: DashboardCallbacks): {
       <!-- Meeting list -->
       <div class="meeting-list">${meetingCards}</div>
 
+      ${paginationHtml}
+
       <div class="spacer"></div>
 
       <!-- FAB -->
@@ -139,6 +154,18 @@ export function createDashboardScreen(cb: DashboardCallbacks): {
     // Wire events
     el.querySelector('#record-fab')!.addEventListener('click', cb.onRecordClick);
     el.querySelector('.search-inner')!.addEventListener('click', cb.onSearchClick);
+
+    // Logout
+    const logoutBtn = el.querySelector('#dash-logout');
+    if (logoutBtn && cb.onLogout) {
+      logoutBtn.addEventListener('click', () => cb.onLogout!());
+    }
+
+    // Pagination
+    const prevBtn = el.querySelector('#dash-prev');
+    const nextBtn = el.querySelector('#dash-next');
+    if (prevBtn && cb.onPrevPage) prevBtn.addEventListener('click', () => cb.onPrevPage!());
+    if (nextBtn && cb.onNextPage) nextBtn.addEventListener('click', () => cb.onNextPage!());
 
     // Meeting card clicks
     el.querySelectorAll('.meeting-card[data-meeting-id]').forEach(card => {

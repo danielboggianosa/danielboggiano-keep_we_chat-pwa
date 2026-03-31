@@ -36,12 +36,14 @@ services:
       retries: 3
     environment:
       - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/meeting_transcription}
+      - JWT_SECRET=${JWT_SECRET}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}
       - S3_ENDPOINT=${S3_ENDPOINT:-http://minio:9000}
       - S3_ACCESS_KEY=${S3_ACCESS_KEY}
       - S3_SECRET_KEY=${S3_SECRET_KEY}
-      - JWT_SECRET=${JWT_SECRET}
       - ZOOM_API_KEY=${ZOOM_API_KEY}
       - ZOOM_API_SECRET=${ZOOM_API_SECRET}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
       - NODE_ENV=${NODE_ENV:-production}
     networks:
       - app-network
@@ -58,7 +60,9 @@ services:
       timeout: 10s
       retries: 3
     environment:
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
       - STT_MODEL_PATH=${STT_MODEL_PATH:-/models/whisper-large}
+      - PORT=4001
       - NODE_ENV=${NODE_ENV:-production}
     networks:
       - app-network
@@ -75,7 +79,9 @@ services:
       timeout: 10s
       retries: 3
     environment:
-      - NLP_MODEL_NAME=${NLP_MODEL_NAME:-gpt-4}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - NLP_MODEL=${NLP_MODEL:-gpt-4}
+      - PORT=4002
       - NODE_ENV=${NODE_ENV:-production}
     networks:
       - app-network
@@ -96,6 +102,8 @@ services:
       retries: 3
     environment:
       - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/meeting_transcription}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - PORT=4003
       - NODE_ENV=${NODE_ENV:-production}
     networks:
       - app-network
@@ -106,16 +114,27 @@ services:
       dockerfile: Dockerfile
     ports:
       - "${CALENDAR_SERVICE_PORT:-4004}:4004"
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:4004/health"]
       interval: 30s
       timeout: 10s
       retries: 3
     environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/meeting_transcription}
+      - TOKEN_ENCRYPTION_KEY=${TOKEN_ENCRYPTION_KEY}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - TEAMS_CLIENT_ID=${TEAMS_CLIENT_ID}
-      - TEAMS_CLIENT_SECRET=${TEAMS_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:4004/callback/google-calendar}
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
+      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
+      - AZURE_REDIRECT_URI=${AZURE_REDIRECT_URI:-http://localhost:4004/callback/teams-calendar}
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID:-common}
+      - APP_URL=${APP_URL:-http://localhost:3000}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - PORT=4004
       - NODE_ENV=${NODE_ENV:-production}
     networks:
       - app-network
@@ -157,9 +176,33 @@ services:
     networks:
       - app-network
 
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    networks:
+      - app-network
+
 volumes:
   postgres-data:
   minio-data:
+  prometheus-data:
 
 networks:
   app-network:
