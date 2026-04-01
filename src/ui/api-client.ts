@@ -172,6 +172,16 @@ export async function apiLogin(email: string, password: string): Promise<AuthRes
   return data;
 }
 
+export async function apiGoogleLogin(code: string): Promise<AuthResponse> {
+  const data = await apiFetch<AuthResponse>('/api/auth/google', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  });
+  setTokens(data.accessToken, data.refreshToken);
+  notifyAuth(true);
+  return data;
+}
+
 export async function apiLogout(): Promise<void> {
   try {
     await apiFetch('/api/auth/logout', {

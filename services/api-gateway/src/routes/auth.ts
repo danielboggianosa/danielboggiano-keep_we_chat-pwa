@@ -3,11 +3,19 @@ import type { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
+import { OAuth2Client } from 'google-auth-library';
 import { pool } from '../db.js';
 import { logger } from '../logger.js';
 import type { JWTPayload } from '../middleware/jwt-auth.js';
 
 const router = Router();
+
+// 3.1: OAuth2Client instance for Google OAuth
+const oauthClient = new OAuth2Client(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  process.env.GOOGLE_OAUTH_REDIRECT_URI,
+);
 
 const BCRYPT_COST = 12;
 const ACCESS_TOKEN_EXPIRY = '15m';
@@ -51,7 +59,7 @@ function generateRefreshToken(): { raw: string; hash: string } {
 
 async function recordAuthEvent(
   userId: string | null,
-  eventType: 'login_success' | 'login_failed' | 'token_refresh' | 'logout',
+  eventType: 'login_success' | 'login_failed' | 'token_refresh' | 'logout' | 'google_login',
   ip: string,
 ): Promise<void> {
   try {
@@ -295,6 +303,121 @@ router.post('/logout', async (req: Request, res: Response): Promise<void> => {
     res.json({ message: 'Logged out successfully' });
   } catch (err) {
     logger.error('Logout failed', { error: err instanceof Error ? err.message : String(err) });
+    res.status(500).json({ error: 'Internal server error', code: 500 });
+  }
+});
+
+/**
+ * POST /api/auth/google
+ * Authenticates user via Google OAuth 2.0 authorization code.
+ * Exchanges code for tokens, verifies ID token, creates/links user, and issues JWT tokens.
+ */
+router.post('/google', async (req: Request, res: Response): Promise<void> => {
+  const ip = getClientIp(req);
+
+  try {
+    // 3.7: Missing code → 400
+    const { code } = req.body;
+    if (!code) {
+      res.status(400).json({ error: 'code is required', code: 400 });
+      return;
+    }
+
+    // 3.2: Exchange authorization code for tokens
+    let tokens;
+    try {
+      const tokenResponse = await oauthClient.getToken(code);
+      tokens = tokenResponse.tokens;
+    } catch (err) {
+      logger.error('Google code exchange failed', { error: err instanceof Error ? err.message : String(err) });
+      await recordAuthEvent(null, 'login_failed', ip);
+      res.status(401).json({ error: 'Google authentication failed', code: 401 });
+      return;
+    }
+
+    // 3.2: Verify ID token and extract claims
+    let payload;
+    try {
+      const ticket = await oauthClient.verifyIdToken({
+        idToken: tokens.id_token!,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
+      payload = ticket.getPayload();
+    } catch (err) {
+      logger.error('Google ID token verification failed', { error: err instanceof Error ? err.message : String(err) });
+      await recordAuthEvent(null, 'login_failed', ip);
+      res.status(401).json({ error: 'Invalid Google token', code: 401 });
+      return;
+    }
+
+    if (!payload || !payload.sub || !payload.email) {
+      await recordAuthEvent(null, 'login_failed', ip);
+      res.status(401).json({ error: 'Invalid Google token', code: 401 });
+      return;
+    }
+
+    const googleId = payload.sub;
+    const email = payload.email;
+    const name = payload.name ?? email;
+
+    // 3.3: User lookup/creation/linking logic
+    const existingResult = await pool.query(
+      'SELECT id, email, name, google_id, role, is_active FROM users WHERE email = $1',
+      [email],
+    );
+
+    let user;
+    let isNewUser = false;
+
+    if (existingResult.rows.length === 0) {
+      // 3.3: No user exists → create new user with google_id, password_hash=null
+      const insertResult = await pool.query(
+        `INSERT INTO users (email, name, google_id, password_hash, role)
+         VALUES ($1, $2, $3, NULL, 'user')
+         RETURNING id, email, name, role`,
+        [email, name, googleId],
+      );
+      user = insertResult.rows[0];
+      isNewUser = true;
+    } else {
+      user = existingResult.rows[0];
+
+      // 3.7: Disabled account → 401
+      if (!user.is_active) {
+        await recordAuthEvent(user.id, 'login_failed', ip);
+        res.status(401).json({ error: 'La cuenta está desactivada', code: 401 });
+        return;
+      }
+
+      if (!user.google_id) {
+        // 3.3: User exists without google_id → link account
+        await pool.query('UPDATE users SET google_id = $1 WHERE id = $2', [googleId, user.id]);
+      }
+      // 3.3: User exists with google_id → direct login (no changes needed)
+    }
+
+    // 3.4: Emit access token and refresh token
+    const accessToken = generateAccessToken(user.id, user.role);
+    const refresh = generateRefreshToken();
+
+    const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_SECONDS * 1000);
+    await pool.query(
+      'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+      [user.id, refresh.hash, expiresAt],
+    );
+
+    // 3.5: Audit event on success
+    await recordAuthEvent(user.id, 'google_login', ip);
+
+    // 3.6: Respond with same structure as login/register, 201 for new user, 200 for existing
+    const statusCode = isNewUser ? 201 : 200;
+    res.status(statusCode).json({
+      user: { id: user.id, email: user.email, name: user.name, role: user.role },
+      accessToken,
+      refreshToken: refresh.raw,
+    });
+  } catch (err) {
+    logger.error('Google OAuth login failed', { error: err instanceof Error ? err.message : String(err) });
     res.status(500).json({ error: 'Internal server error', code: 500 });
   }
 });

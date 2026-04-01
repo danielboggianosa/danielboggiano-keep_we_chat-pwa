@@ -12,8 +12,10 @@ export const rateLimiter = rateLimit({
   standardHeaders: true, // sends RateLimit-* headers
   legacyHeaders: false,
   keyGenerator: (req: Request): string => {
-    return req.user?.userId ?? req.ip ?? 'unknown';
+    if (req.user?.userId) return req.user.userId;
+    return req.ip ?? 'unknown';
   },
+  validate: { keyGeneratorIpFallback: false },
   handler: (_req: Request, res: Response): void => {
     const retryAfterSeconds = Math.ceil(60_000 / 1000); // window in seconds
     res.set('Retry-After', String(retryAfterSeconds));

@@ -18,7 +18,7 @@ declare global {
 }
 
 /** Paths that do not require JWT authentication. */
-const PUBLIC_PATHS = ['/health', '/metrics', '/api/auth/login', '/api/auth/register'];
+const PUBLIC_PATHS = ['/health', '/metrics', '/api/auth/login', '/api/auth/register', '/api/auth/google'];
 
 /**
  * Middleware that validates the JWT access token from the Authorization header.

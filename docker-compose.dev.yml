@@ -8,12 +8,13 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./client/src:/app/src
-      - ./client/public:/app/public
-      - ./client/index.html:/app/index.html
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./index.html:/app/index.html
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000"]
     environment:
       - NODE_ENV=development
+      - VITE_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
 
   api-gateway:
     build:
